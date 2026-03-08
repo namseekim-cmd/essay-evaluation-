@@ -5,9 +5,18 @@ import pandas as pd
 
 # 1. 시트 주소 설정 (본인의 주소로 교체)
 
-SHEET_URL = "https://docs.google.com/spreadsheets/d/19j2Ikt7WIaDe4WOHciK1uBJY0z1n1tyE2Q7BpfPnAPA"
-st.set_page_config(page_title="2026 에세이 통합 시스템", page_icon="🎓")
+# [수정] 중복 없는 깔끔한 주소
+SHEET_URL = "https://docs.google.com/spreadsheets/d/19j2Ikt7WIaDe4WOHciK1uBJY0z1n1tyE2Q7BpfPnAPA/edit"
 
+conn = st.connection("gsheets", type=GSheetsConnection)
+# 데이터를 읽을 때 worksheet 이름을 명시하는 게 핵심입니다.
+try:
+    df = conn.read(spreadsheet=SHEET_URL, worksheet="Sheet1")
+    st.success("연결 성공!")
+except Exception as e:
+    st.error(f"연결 실패: {e}")
+    st.info("시트 하단 탭 이름이 'Sheet1'이 맞는지 확인해 보세요!")
+  
 # 2. 시스템 진단 및 설정
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
@@ -84,6 +93,7 @@ if submitted:
                     st.error("❌ 한글 처리 오류: 구글 시트 하단 탭 이름을 'Sheet1'으로 변경했는지 확인하세요.")
                 else:
                     st.error(f"❌ 제출 중 오류 발생: {e}")
+
 
 
 
