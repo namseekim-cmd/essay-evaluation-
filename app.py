@@ -5,16 +5,16 @@ import pandas as pd
 from datetime import datetime
 
 # ==========================================
-# 1. 강력 보안 및 사이드바 자동 열림 설정
+# 1. 정밀 보안 설정 (사이드바 자동 열림 + 화살표 보호)
 # ==========================================
 st.set_page_config(
     page_title="2026 미술하기 생각하기", 
     page_icon="🎨", 
     layout="wide",
-    initial_sidebar_state="expanded" # 접속 시 주차 메뉴 자동 노출
+    initial_sidebar_state="expanded" # 접속 시 주차 메뉴가 자동으로 펼쳐짐
 )
 
-# [수정] 정밀 타격 CSS: 화살표는 살리고 우측 도구(깃허브, 메뉴)만 숨김
+# [수정] 화살표 버튼은 남겨두고, 우측의 깃허브/배포/메뉴만 쏙 가리는 CSS
 hide_style = """
     <style>
     /* 1. 우측 상단 햄버거 메뉴(점 3개) 숨기기 */
@@ -23,44 +23,46 @@ hide_style = """
     /* 2. 하단 푸터(Made with Streamlit) 숨기기 */
     footer {visibility: hidden;}
     
-    /* 3. 상단 헤더의 우측 도구함(깃허브 링크, Deploy 버튼 등) 통째로 날리기 */
-    [data-testid="stToolbar"] {display: none;}
+    /* 3. 상단 툴바에서 깃허브, 뷰 소스 아이콘 등만 가리기 */
+    /* 화살표(Sidebar Toggle)를 살리기 위해 전체 가리기 대신 요소를 투명하게 처리합니다 */
+    [data-testid="stToolbar"] {visibility: hidden;}
     .stAppDeployButton {display: none;}
     
-    /* 4. 헤더 배경 투명화 및 화살표 버튼 위치 확보 */
-    header {background-color: rgba(0,0,0,0); height: 3rem;}
+    /* 4. 사이드바 화살표(Collapse/Expand) 버튼은 다시 보이게 강제 설정 */
+    button[data-testid="stSidebarCollapseButton"] {
+        visibility: visible !important;
+        color: #31333F; /* 버튼 색상을 명확하게 설정 */
+    }
     </style>
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 시간 및 주차 관리 로직
+# 2. 시간 및 시스템 설정
 # ==========================================
 now = datetime.now()
-weekday = now.weekday()  # 월(0) ~ 일(6)
-# 수(2), 목(3), 금(4), 토(5), 일(6)에만 오픈
+weekday = now.weekday()  # 수(2) ~ 일(6) 제출 가능
 is_open = 2 <= weekday <= 6
 
-# AI 및 DB 연결 (Gemini 3 Flash 적용)
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
     
     @st.cache_resource
-    def get_active_model():
+    def get_model():
         available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         for p in ['models/gemini-3-flash', 'models/gemini-1.5-flash-latest']:
             if p in available: return p
         return available[0]
     
-    active_model = get_active_model()
+    active_model = get_model()
     conn = st.connection("gsheets", type=GSheetsConnection)
 except Exception as e:
     st.error(f"⚠️ 시스템 초기화 오류: {e}")
     st.stop()
 
 # ==========================================
-# 3. 사이드바 (주차 선택 및 관리자)
+# 3. 사이드바 (주차 선택 및 관리)
 # ==========================================
 with st.sidebar:
     st.title("📅 주차 선택")
@@ -70,10 +72,10 @@ with st.sidebar:
     )
     st.divider()
     admin_pw = st.text_input("관리자 인증", type="password")
-    is_admin = (admin_pw == "1234") # 실제 비밀번호로 변경하세요
+    is_admin = (admin_pw == "1234")
 
 # ==========================================
-# 4. 현황판 및 데이터 로드
+# 4. 현황판 표시
 # ==========================================
 try:
     df = conn.read(worksheet=selected_week, ttl=0)
@@ -81,7 +83,7 @@ except:
     df = pd.DataFrame(columns=["학번", "이름", "글자수", "AI의견", "제출시간"])
 
 st.title("🎨 2026 미술하기 생각하기 에세이")
-st.subheader(f"📊 {selected_week} 제출 현황")
+st.subheader(f"📊 {selected_week} 실시간 현황")
 
 c1, c2, c3 = st.columns(3)
 with c1: st.metric("총 제출 인원", f"{len(df)}명 / 125명")
@@ -95,16 +97,14 @@ with c3:
 st.divider()
 
 # ==========================================
-# 5. 제출 폼 및 기간 제어
+# 5. 제출 폼 및 로직
 # ==========================================
 if not is_open:
-    st.warning("⚠️ 지금은 제출 기간이 아닙니다. (매주 수요일 00:00 ~ 일요일 23:59 제출 가능)")
+    st.warning("⚠️ 지금은 제출 기간이 아닙니다. (매주 수요일 ~ 일요일 제출 가능)")
     st.info(f"현재 시간: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 else:
-    st.success(f"✅ {selected_week} 과제 제출이 가능합니다. (마감: 이번 주 일요일 23:59)")
-    
+    st.success(f"✅ {selected_week} 제출 가능 (마감: 이번 주 일요일 23:59)")
     with st.form("essay_form", clear_on_submit=True):
-        st.info(f"📍 [{selected_week}] 에세이를 작성 중입니다.")
         cid, cname = st.columns(2)
         with cid: sid = st.text_input("학번 (숫자만)")
         with cname: sname = st.text_input("이름")
@@ -122,7 +122,7 @@ else:
                 with st.spinner("AI 분석 및 저장 중..."):
                     try:
                         model = genai.GenerativeModel(active_model)
-                        prompt = f"에세이 참신성 평가(Pass/Fail 및 1문장 요약):\n\n{content}"
+                        prompt = f"미술에 대한 참신성 평가(Pass/Fail 및 1문장 요약):\n\n{content}"
                         response = model.generate_content(prompt)
                         ai_comment = response.text
 
@@ -139,10 +139,10 @@ else:
                         st.success("✅ 제출 성공!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"❌ 제출 실패: {e}")
+                        st.error(f"❌ 오류 발생: {e}")
 
 # ==========================================
-# 6. 하단 데이터 확인 및 관리 도구
+# 6. 명단 확인 및 관리 도구
 # ==========================================
 if not df.empty:
     with st.expander("📋 제출 확인 명단"):
