@@ -4,15 +4,24 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
-# 1. 보안 및 기본 설정
-st.set_page_config(page_title="2026 미술하기 생각하기", page_icon="🎨", layout="wide")
+# 1. 보안 및 기본 설정 수정
+# initial_sidebar_state="expanded"를 추가하면 앱 접속 시 메뉴가 자동으로 열려 있습니다!
+st.set_page_config(
+    page_title="2026 미술하기 생각하기", 
+    page_icon="🎨", 
+    layout="wide",
+    initial_sidebar_state="expanded" # 접속하자마자 주차 선택창이 보이게 설정
+)
 
+# 수정된 CSS: 화살표 아이콘은 살리고, 메뉴와 배포 버튼만 숨깁니다.
 hide_style = """
     <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    .stAppDeployButton {display: none;}
+    #MainMenu {visibility: hidden;} /* 우측 상단 햄버거 메뉴 숨기기 */
+    footer {visibility: hidden;}    /* 하단 Made with Streamlit 숨기기 */
+    .stAppDeployButton {display: none;} /* 상단 Deploy 버튼 숨기기 */
+    
+    /* 헤더 전체를 숨기지 않고, 우측 상단 장식만 투명하게 처리 */
+    header {background-color: rgba(0,0,0,0); position: absolute; top: 0;}
     </style>
 """
 st.markdown(hide_style, unsafe_allow_html=True)
@@ -124,3 +133,4 @@ if is_admin:
         conn.update(worksheet=selected_week, data=empty_df)
         st.sidebar.success("초기화 완료")
         st.rerun()
+
