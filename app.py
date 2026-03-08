@@ -4,18 +4,15 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
 # 1. 시트 주소 설정 (본인의 주소로 교체)
-
-# [수정] 중복 없는 깔끔한 주소
-SHEET_URL = "https://docs.google.com/spreadsheets/d/19j2Ikt7WIaDe4WOHciK1uBJY0z1n1tyE2Q7BpfPnAPA/edit"
-
+SHEET_URL = "https://docs.google.com/spreadsheets/d/19j2Ikt7WIaDe4WOHciK1uBJY0z1n1tyE2Q7BpfPnAPA"
 conn = st.connection("gsheets", type=GSheetsConnection)
-# 데이터를 읽을 때 worksheet 이름을 명시하는 게 핵심입니다.
+
+# [핵심 수정] 데이터를 읽어올 때 에러가 나면 빈 표를 만듭니다.
 try:
     df = conn.read(spreadsheet=SHEET_URL, worksheet="Sheet1")
-    st.success("연결 성공!")
-except Exception as e:
-    st.error(f"연결 실패: {e}")
-    st.info("시트 하단 탭 이름이 'Sheet1'이 맞는지 확인해 보세요!")
+except Exception:
+    # 시트가 비어있을 경우를 대비한 기본 틀
+    df = pd.DataFrame(columns=["학번", "이름", "글자수", "AI평가", "결과"])
   
 # 2. 시스템 진단 및 설정
 try:
@@ -57,6 +54,24 @@ with st.form("essay_form", clear_on_submit=True):
 
 # 4. 제출 로직
 if submitted:
+    # 저장할 데이터 한 줄 생성
+    new_data = pd.DataFrame([{
+        "학번": str(sid),
+        "이름": str(sname),
+        "글자수": len(content),
+        "AI의견": str(ai_comment),
+        "제출시간": pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')
+    }])
+
+    # 기존 데이터와 합치기 (모든 데이터를 문자로 변환하여 400 에러 방지)
+    updated_df = pd.concat([df, new_data], ignore_index=True).astype(str)
+    
+    # 시트에 업데이트
+    try:
+        conn.update(spreadsheet=SHEET_URL, worksheet="Sheet1", data=updated_df)
+        st.success("제출 완료!")
+    except Exception as e:
+        st.error(f"400 에러 발생 원인: {e}")
     if not sid or not sname or len(content) < 300:
         st.warning("정보를 모두 입력해 주세요 (에세이는 300자 이상).")
     else:
@@ -93,6 +108,7 @@ if submitted:
                     st.error("❌ 한글 처리 오류: 구글 시트 하단 탭 이름을 'Sheet1'으로 변경했는지 확인하세요.")
                 else:
                     st.error(f"❌ 제출 중 오류 발생: {e}")
+
 
 
 
