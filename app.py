@@ -5,7 +5,7 @@ import pandas as pd
 
 # 1. 시트 주소 설정 (본인의 주소로 교체)
 SHEET_ID = "https://docs.google.com/spreadsheets/19j2Ikt7WIaDe4WOHciK1uBJY0z1n1tyE2Q7BpfPnAPA"
-SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid=0"
+SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 
 st.set_page_config(page_title="2026 에세이 통합 시스템", page_icon="🎓")
 
@@ -28,7 +28,7 @@ try:
 except Exception as e:
     st.error(f"시스템 초기화 실패: {e}")
     st.stop()
-
+st.write(f"현재 접속 시도 중인 주소: {SHEET_URL}")
 # 3. 사용자 화면 구성
 st.title("📝 2026 에세이 제출처")
 st.caption(f"AI 모델 {active_model} 연결됨 | 데이터 저장소: Sheet1")
@@ -78,6 +78,7 @@ if submitted:
                     st.error("❌ 한글 처리 오류: 구글 시트 하단 탭 이름을 'Sheet1'으로 변경했는지 확인하세요.")
                 else:
                     st.error(f"❌ 제출 중 오류 발생: {e}")
+
 
 
 
