@@ -3,119 +3,83 @@ import google.generativeai as genai
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# 1. 시트 주소 설정 (본인의 주소로 교체)
+# 1. 고정 설정 (주소 중복 방지 완료)
 SHEET_URL = "https://docs.google.com/spreadsheets/d/19j2Ikt7WIaDe4WOHciK1uBJY0z1n1tyE2Q7BpfPnAPA"
-conn = st.connection("gsheets", type=GSheetsConnection)
 
-# [핵심 수정] 데이터를 읽어올 때 에러가 나면 빈 표를 만듭니다.
-try:
-    df = conn.read(spreadsheet=SHEET_URL, worksheet="Sheet1")
-except Exception:
-    # 시트가 비어있을 경우를 대비한 기본 틀
-    df = pd.DataFrame(columns=["학번", "이름", "글자수", "AI평가", "결과"])
-  
-# 2. 시스템 진단 및 설정
+st.set_page_config(page_title="2026 에세이 평가 시스템", page_icon="📝")
+
+# 2. 시스템 초기화 및 모델 자동 탐색
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
     
-    # [진단] 사용 가능한 최신 모델 찾기
     @st.cache_resource
-    def get_working_model():
+    def get_latest_model():
         models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # 2026년 기준 가동 모델 순위
-        for m in ['models/gemini-3-flash', 'models/gemini-1.5-flash-latest']:
-            if m in models: return m
+        # 2026년 가동 모델 순위
+        for p in ['models/gemini-3-flash', 'models/gemini-2.0-flash', 'models/gemini-1.5-flash-latest']:
+            if p in models: return p
         return models[0] if models else None
 
-    active_model = get_working_model()
+    active_model = get_latest_model()
     conn = st.connection("gsheets", type=GSheetsConnection)
 except Exception as e:
-    st.error(f"시스템 초기화 실패: {e}")
+    st.error(f"시스템 초기화 실패 (Secrets 확인 필요): {e}")
     st.stop()
-st.write(f"현재 접속 시도 중인 주소: {SHEET_URL}")
 
-# 3. 사용자 화면 구성
-st.title("📝 2026 에세이 제출처")
-# [진단 코드] 시트 안에 어떤 탭들이 있는지 화면에 보여줍니다.
-try:
-    all_sheets = conn.read(spreadsheet=SHEET_URL).index.tolist()
-    st.write(f"현재 인식된 시트 목록: {all_sheets}")
-except:
-    st.write("시트 목록을 불러올 수 없습니다. 주소나 권한을 확인하세요.")
-st.caption(f"AI 모델 {active_model} 연결됨 | 데이터 저장소: Sheet1")
+# 3. 메인 화면 UI
+st.title("🎓 2026 에세이 통합 제출처")
+st.caption(f"연결된 AI: {active_model.split('/')[-1]} | 저장소: Sheet1")
 
 with st.form("essay_form", clear_on_submit=True):
     col1, col2 = st.columns(2)
-    with col1: sid = st.text_input("학번")
+    with col1: sid = st.text_input("학번 (숫자만)")
     with col2: sname = st.text_input("이름")
-    content = st.text_area("에세이 내용 (300자 이상)", height=350)
-    submitted = st.form_submit_button("제출 및 AI 평가 받기")
+    content = st.text_area("에세이 내용 (300자 이상)", height=400)
+    submitted = st.form_submit_button("제출 및 AI 평가")
 
-# 4. 제출 로직
+# 4. 제출 로직 (NameError 및 400 에러 방지)
 if submitted:
-    # 저장할 데이터 한 줄 생성
-    new_data = pd.DataFrame([{
-        "학번": str(sid),
-        "이름": str(sname),
-        "글자수": len(content),
-        "AI의견": str(ai_comment),
-        "제출시간": pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')
-    }])
-
-    # 기존 데이터와 합치기 (모든 데이터를 문자로 변환하여 400 에러 방지)
-    updated_df = pd.concat([df, new_data], ignore_index=True).astype(str)
-    
-    # 시트에 업데이트
-    try:
-        conn.update(spreadsheet=SHEET_URL, worksheet="Sheet1", data=updated_df)
-        st.success("제출 완료!")
-    except Exception as e:
-        st.error(f"400 에러 발생 원인: {e}")
     if not sid or not sname or len(content) < 300:
-        st.warning("정보를 모두 입력해 주세요 (에세이는 300자 이상).")
+        st.warning("모든 정보를 입력해 주세요 (에세이 300자 이상).")
     else:
-        with st.spinner("AI 분석 및 데이터 전송 중..."):
+        with st.spinner("AI 분석 및 시트 저장 중..."):
             try:
+                # [변수 초기화] NameError 방지
+                ai_comment = "분석 중 오류 발생"
+                
                 # AI 평가 실행
                 model = genai.GenerativeModel(active_model)
-                response = model.generate_content(f"에세이 독창성 평가. 결과:Pass/Fail, 이유:1문장.\n\n{content}")
-                ai_result = response.text
+                response = model.generate_content(f"에세이 평가(결과:Pass/Fail, 이유:1문장): {content}")
+                ai_comment = response.text
 
-                # 구글 시트 읽기 (한글 에러 방지를 위해 worksheet 명시)
-                # 만약 여기서 에러가 나면 시트 탭 이름이 'Sheet1'이 아닌 것입니다.
-                df = conn.read(spreadsheet=SHEET_URL, worksheet="Sheet1")
+                # 시트 데이터 읽기 (404 방지: worksheet 명시)
+                try:
+                    df = conn.read(spreadsheet=SHEET_URL, worksheet="Sheet1", ttl=0)
+                except:
+                    # 시트가 비어있을 경우 헤더 생성
+                    df = pd.DataFrame(columns=["학번", "이름", "글자수", "AI의견", "제출시간"])
                 
-                # 새 데이터 생성 (모든 텍스트를 문자열로 강제 변환하여 ASCII 에러 방지)
-                new_entry = pd.DataFrame([{
+                # 새 데이터 추가 (ASCII/400 방지: 모든 데이터 강제 문자열 변환)
+                new_row = pd.DataFrame([{
                     "학번": str(sid),
                     "이름": str(sname),
                     "글자수": len(content),
-                    "AI평가": str(ai_result),
-                    "제출일시": pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')
+                    "AI의견": str(ai_comment),
+                    "제출시간": pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')
                 }])
 
                 # 데이터 병합 및 업데이트
-                updated_df = pd.concat([df, new_entry], ignore_index=True).astype(str)
+                updated_df = pd.concat([df, new_row], ignore_index=True).astype(str)
                 conn.update(spreadsheet=SHEET_URL, worksheet="Sheet1", data=updated_df)
-
+                
                 st.balloons()
-                st.success(f"✅ {sname}님, 제출이 완료되었습니다!")
-                st.info(f"🤖 AI 코멘트: {ai_result}")
+                st.success(f"✅ {sname}님, 제출 완료!")
+                st.info(f"🤖 AI 의견: {ai_comment}")
 
             except Exception as e:
-                if "ascii" in str(e):
-                    st.error("❌ 한글 처리 오류: 구글 시트 하단 탭 이름을 'Sheet1'으로 변경했는지 확인하세요.")
-                else:
-                    st.error(f"❌ 제출 중 오류 발생: {e}")
-
-
-
-
-
-
-
-
+                st.error(f"❌ 제출 실패: {e}")
+                st.write("도움말: 구글 시트 탭 이름이 'Sheet1'인지, 공유 설정이 '편집자'인지 확인하세요.")
 
 
 
