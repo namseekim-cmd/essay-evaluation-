@@ -38,7 +38,7 @@ except Exception as e:
     st.stop()
 
 # 2. 메인 화면 UI
-st.title("🎓 2026 에세이 통합 제출처")
+st.title("🎓 2026 미술하기 생각하기 에세이 제출 시스템")
 if active_model:
     st.caption(f"🤖 현재 가동 중인 AI: {active_model.split('/')[-1]}")
 else:
@@ -90,4 +90,5 @@ if submitted:
 
             except Exception as e:
                 st.error(f"❌ 제출 실패: {e}")
+
 
