@@ -28,8 +28,15 @@ except Exception as e:
     st.error(f"시스템 초기화 실패: {e}")
     st.stop()
 st.write(f"현재 접속 시도 중인 주소: {SHEET_URL}")
+
 # 3. 사용자 화면 구성
 st.title("📝 2026 에세이 제출처")
+# [진단 코드] 시트 안에 어떤 탭들이 있는지 화면에 보여줍니다.
+try:
+    all_sheets = conn.read(spreadsheet=SHEET_URL).index.tolist()
+    st.write(f"현재 인식된 시트 목록: {all_sheets}")
+except:
+    st.write("시트 목록을 불러올 수 없습니다. 주소나 권한을 확인하세요.")
 st.caption(f"AI 모델 {active_model} 연결됨 | 데이터 저장소: Sheet1")
 
 with st.form("essay_form", clear_on_submit=True):
@@ -77,6 +84,7 @@ if submitted:
                     st.error("❌ 한글 처리 오류: 구글 시트 하단 탭 이름을 'Sheet1'으로 변경했는지 확인하세요.")
                 else:
                     st.error(f"❌ 제출 중 오류 발생: {e}")
+
 
 
 
