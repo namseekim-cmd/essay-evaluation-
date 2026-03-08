@@ -3,92 +3,101 @@ import google.generativeai as genai
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# [설정] 주소 중복 방지 완료
-SHEET_URL = "https://docs.google.com/spreadsheets/d/19j2Ikt7WIaDe4WOHciK1uBJY0z1n1tyE2Q7BpfPnAPA"
+# 1. 초기 설정
+st.set_page_config(page_title="2026 에세이 마스터 시스템", page_icon="📝", layout="wide")
 
-st.set_page_config(page_title="2026 미술하기 생각하기 에세이 제출 시스템", page_icon="📝")
-
-# 1. AI 및 데이터베이스 설정
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
     
-    # [수정] 현재 사용 가능한 모델을 실시간으로 확인하여 선택
     @st.cache_resource
-    def get_working_model():
-        # 내 API 키로 쓸 수 있는 모델 목록 가져오기
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # 2026년 기준 우선순위 (최신 순)
-        priorities = [
-            'models/gemini-3-flash',          # 최신 모델
-            'models/gemini-1.5-flash-latest', # 가장 안정적인 최신 포인터
-            'models/gemini-1.5-flash',        # 표준 모델
-        ]
-        
-        for p in priorities:
-            if p in available_models:
-                return p
-        return available_models[0] if available_models else None
-
-    active_model = get_working_model()
+    def get_model():
+        available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        for p in ['models/gemini-1.5-flash-latest', 'models/gemini-1.5-flash']:
+            if p in available: return p
+        return available[0]
+    
+    active_model = get_model()
     conn = st.connection("gsheets", type=GSheetsConnection)
 except Exception as e:
-    st.error(f"⚠️ 시스템 초기화 실패: {e}")
+    st.error(f"설정 에러: {e}")
     st.stop()
 
-# 2. 메인 화면 UI
-st.title("🎓 2026 미술하기 생각하기 에세이 제출 시스템")
-if active_model:
-    st.caption(f"🤖 현재 가동 중인 AI: {active_model.split('/')[-1]}")
-else:
-    st.error("사용 가능한 AI 모델이 없습니다. Google AI Studio에서 API 키 상태를 확인하세요.")
+# 2. 데이터 불러오기 (중복 체크 및 현황판용)
+try:
+    df = conn.read(ttl=0) # 실시간 데이터를 위해 캐시 0
+except:
+    df = pd.DataFrame(columns=["학번", "이름", "글자수", "AI의견", "제출시간"])
 
+# 3. 메인 화면 및 현황판 (기능 3)
+st.title("🎓 2026 에세이 통합 제출 및 관리 시스템")
+
+col_a, col_b, col_c = st.columns(3)
+col_a.metric("총 제출 인원", f"{len(df)}명 / 125명")
+if not df.empty:
+    pass_count = df['AI의견'].str.contains("Pass").sum()
+    col_b.metric("통과(Pass) 인원", f"{pass_count}명")
+    col_c.metric("미제출 인원", f"{125 - len(df)}명")
+
+st.divider()
+
+# 4. 제출 폼
 with st.form("essay_form", clear_on_submit=True):
-    col1, col2 = st.columns(2)
-    with col1: sid = st.text_input("학번 (숫자만)")
-    with col2: sname = st.text_input("이름")
-    content = st.text_area("에세이 내용 (300자 이상)", height=400)
-    submitted = st.form_submit_button("제출 및 AI 평가")
+    c1, c2 = st.columns(2)
+    with c1: sid = st.text_input("학번 (숫자만)")
+    with c2: sname = st.text_input("이름")
+    content = st.text_area("에세이 내용 (1500자 이상)", height=450)
+    submitted = st.form_submit_button("제출 및 AI 참신성 평가 시작")
 
-# 3. 제출 로직
+# 5. 제출 로직
 if submitted:
-    if not sid or not sname or len(content) < 300:
-        st.warning("정보를 모두 입력해 주세요 (300자 이상).")
-    elif not active_model:
-        st.error("AI 모델 연결이 필요합니다.")
+    # 기능 1: 글자수 제한 (1500자)
+    if len(content) < 1500:
+        st.error(f"❌ 글자수가 부족합니다. (현재 {len(content)}자 / 최소 1500자 필요)")
+    
+    # 기능 2: 중복 제출 차단
+    elif sid in df['학번'].astype(str).values:
+        st.error(f"❌ 이미 제출된 학번입니다. (학번: {sid})")
+        
+    elif not sid or not sname:
+        st.warning("학번과 이름을 입력해 주세요.")
+        
     else:
-        with st.spinner("AI 분석 및 데이터 저장 중..."):
+        with st.spinner("AI가 에세이의 참신성을 정밀 분석 중입니다..."):
             try:
-                # AI 평가 실행
+                # 기능 4: 참신하고 새로운 내용 평가 전용 프롬프트
                 model = genai.GenerativeModel(active_model)
-                response = model.generate_content(f"에세이 평가(결과:Pass/Fail, 이유:1문장): {content}")
+                prompt = f"""
+                다음 에세이의 '참신함'과 '기존에 없던 새로운 시각'을 중점적으로 평가해줘.
+                형식은 반드시 아래를 지켜줘.
+                결과: Pass 또는 Fail
+                이유: 왜 참신한지(혹은 상투적인지) 1문장으로 요약.
+                
+                에세이 내용:
+                {content}
+                """
+                response = model.generate_content(prompt)
                 ai_comment = response.text
 
-                # 구글 시트 데이터 읽기
-                try:
-                    df = conn.read(spreadsheet=SHEET_URL, worksheet="Sheet1", ttl=0)
-                except:
-                    df = pd.DataFrame(columns=["학번", "이름", "글자수", "AI의견", "제출시간"])
-                
-                # 새 데이터 생성
+                # 데이터 저장
                 new_row = pd.DataFrame([{
-                    "학번": str(sid),
-                    "이름": str(sname),
-                    "글자수": len(content),
-                    "AI의견": str(ai_comment),
+                    "학번": str(sid), "이름": str(sname), 
+                    "글자수": len(content), "AI의견": str(ai_comment),
                     "제출시간": pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')
                 }])
-
-                # 데이터 병합 및 업데이트
+                
                 updated_df = pd.concat([df, new_row], ignore_index=True).astype(str)
-                conn.update(spreadsheet=SHEET_URL, worksheet="Sheet1", data=updated_df)
+                conn.update(data=updated_df)
                 
                 st.balloons()
-                st.success(f"✅ {sname}님, 제출 완료!")
-                st.info(f"🔍 AI 분석: {ai_comment}")
+                st.success("✅ 제출이 완료되었습니다!")
+                st.info(f"🤖 AI 평가 결과:\n{ai_comment}")
+                st.rerun() # 현황판 즉시 갱신
 
             except Exception as e:
-                st.error(f"❌ 제출 실패: {e}")
+                st.error(f"오류 발생: {e}")
 
-
+# 6. 하단 실시간 명단 (선택 사항)
+if not df.empty:
+    with st.expander("📊 실시간 제출자 명단 확인 (최근순)"):
+        st.table(df[['학번', '이름', '제출시간']].iloc[::-1])
