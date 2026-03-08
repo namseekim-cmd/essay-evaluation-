@@ -3,33 +3,46 @@ import google.generativeai as genai
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# 1. 고정 설정 (주소 중복 방지 완료)
+# [설정] 주소 중복 방지 완료
 SHEET_URL = "https://docs.google.com/spreadsheets/d/19j2Ikt7WIaDe4WOHciK1uBJY0z1n1tyE2Q7BpfPnAPA"
 
 st.set_page_config(page_title="2026 에세이 평가 시스템", page_icon="📝")
 
-# 2. 시스템 초기화 및 모델 자동 탐색
+# 1. AI 및 데이터베이스 설정
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
     
+    # [수정] 현재 사용 가능한 모델을 실시간으로 확인하여 선택
     @st.cache_resource
-    def get_latest_model():
-        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # 2026년 가동 모델 순위
-        for p in ['models/gemini-3-flash', 'models/gemini-2.0-flash', 'models/gemini-1.5-flash-latest']:
-            if p in models: return p
-        return models[0] if models else None
+    def get_working_model():
+        # 내 API 키로 쓸 수 있는 모델 목록 가져오기
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # 2026년 기준 우선순위 (최신 순)
+        priorities = [
+            'models/gemini-3-flash',          # 최신 모델
+            'models/gemini-1.5-flash-latest', # 가장 안정적인 최신 포인터
+            'models/gemini-1.5-flash',        # 표준 모델
+        ]
+        
+        for p in priorities:
+            if p in available_models:
+                return p
+        return available_models[0] if available_models else None
 
-    active_model = get_latest_model()
+    active_model = get_working_model()
     conn = st.connection("gsheets", type=GSheetsConnection)
 except Exception as e:
-    st.error(f"시스템 초기화 실패 (Secrets 확인 필요): {e}")
+    st.error(f"⚠️ 시스템 초기화 실패: {e}")
     st.stop()
 
-# 3. 메인 화면 UI
+# 2. 메인 화면 UI
 st.title("🎓 2026 에세이 통합 제출처")
-st.caption(f"연결된 AI: {active_model.split('/')[-1]} | 저장소: Sheet1")
+if active_model:
+    st.caption(f"🤖 현재 가동 중인 AI: {active_model.split('/')[-1]}")
+else:
+    st.error("사용 가능한 AI 모델이 없습니다. Google AI Studio에서 API 키 상태를 확인하세요.")
 
 with st.form("essay_form", clear_on_submit=True):
     col1, col2 = st.columns(2)
@@ -38,29 +51,27 @@ with st.form("essay_form", clear_on_submit=True):
     content = st.text_area("에세이 내용 (300자 이상)", height=400)
     submitted = st.form_submit_button("제출 및 AI 평가")
 
-# 4. 제출 로직 (NameError 및 400 에러 방지)
+# 3. 제출 로직
 if submitted:
     if not sid or not sname or len(content) < 300:
-        st.warning("모든 정보를 입력해 주세요 (에세이 300자 이상).")
+        st.warning("정보를 모두 입력해 주세요 (300자 이상).")
+    elif not active_model:
+        st.error("AI 모델 연결이 필요합니다.")
     else:
-        with st.spinner("AI 분석 및 시트 저장 중..."):
+        with st.spinner("AI 분석 및 데이터 저장 중..."):
             try:
-                # [변수 초기화] NameError 방지
-                ai_comment = "분석 중 오류 발생"
-                
                 # AI 평가 실행
                 model = genai.GenerativeModel(active_model)
                 response = model.generate_content(f"에세이 평가(결과:Pass/Fail, 이유:1문장): {content}")
                 ai_comment = response.text
 
-                # 시트 데이터 읽기 (404 방지: worksheet 명시)
+                # 구글 시트 데이터 읽기
                 try:
                     df = conn.read(spreadsheet=SHEET_URL, worksheet="Sheet1", ttl=0)
                 except:
-                    # 시트가 비어있을 경우 헤더 생성
                     df = pd.DataFrame(columns=["학번", "이름", "글자수", "AI의견", "제출시간"])
                 
-                # 새 데이터 추가 (ASCII/400 방지: 모든 데이터 강제 문자열 변환)
+                # 새 데이터 생성
                 new_row = pd.DataFrame([{
                     "학번": str(sid),
                     "이름": str(sname),
@@ -75,12 +86,7 @@ if submitted:
                 
                 st.balloons()
                 st.success(f"✅ {sname}님, 제출 완료!")
-                st.info(f"🤖 AI 의견: {ai_comment}")
+                st.info(f"🔍 AI 분석: {ai_comment}")
 
             except Exception as e:
                 st.error(f"❌ 제출 실패: {e}")
-                st.write("도움말: 구글 시트 탭 이름이 'Sheet1'인지, 공유 설정이 '편집자'인지 확인하세요.")
-
-
-
-
