@@ -3,54 +3,65 @@ import google.generativeai as genai
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# 1. 온라인 저장소(구글 시트) 연결
-conn = st.connection("gsheets", type=GSheetsConnection)
+st.set_page_config(page_title="2026 에세이 진단 시스템", page_icon="🔍")
 
-# 2. AI 설정 (Streamlit Cloud 설정창에 입력할 키 사용)
-if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-3-flash')
+# --- [1단계: 진단 구간] 실행되자마자 문제를 찾아냅니다 ---
+st.title("🔍 시스템 진단 모드")
+
+if not st.secrets:
+    st.error("❌ [진단 결과] Secrets 설정(또는 secrets.toml 파일)을 아예 찾을 수 없습니다.")
+    st.info("해결법: .streamlit 폴더 안에 secrets.toml 파일이 있는지, 혹은 Streamlit Cloud 설정에 내용을 넣었는지 확인하세요.")
+    st.stop()
+elif "GEMINI_API_KEY" not in st.secrets:
+    st.error("❌ [진단 결과] 장부(Secrets)는 찾았는데, 'GEMINI_API_KEY'라는 이름의 열쇠가 없습니다.")
+    st.info("해결법: 파일 안의 글자가 GEMINI_API_KEY = \"...\" 형식인지 확인하세요. (대문자 필수)")
+    st.stop()
 else:
-    st.error("설정에서 API 키를 등록해주세요!")
+    st.success("✅ [진단 완료] API 열쇠를 정상적으로 찾았습니다. 과제 제출 창을 띄웁니다.")
 
-st.title("🎓 2026 에세이 제출 및 1차 평가")
-st.write("300자 이상의 에세이를 작성하여 제출하세요. 제출 즉시 AI가 1차 통과 여부를 알려줍니다.")
+# --- [2단계: 정상 작동 구간] 진단이 통과되면 아래가 실행됩니다 ---
+api_key = st.secrets["GEMINI_API_KEY"]
 
-# 3. 학생용 제출 양식
+@st.cache_resource
+def get_working_model(key):
+    try:
+        genai.configure(api_key=key)
+        available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # 2026년 최신 모델 우선 순위
+        for p in ['models/gemini-3-flash', 'models/gemini-2.5-flash', 'models/gemini-1.5-flash']:
+            if p in available: return p
+        return available[0]
+    except: return None
+
+active_model = get_working_model(api_key)
+
+st.divider()
+st.subheader("🎓 에세이 과제 제출처")
+
 with st.form("essay_form"):
-    st.subheader("과제 제출란")
-    student_id = st.text_input("학번 (예: 20260001)")
-    name = st.text_input("이름")
-    essay_content = st.text_area("에세이 내용", height=400)
-    
-    submitted = st.form_submit_button("제출하기")
+    sid = st.text_input("학번")
+    sname = st.text_input("이름")
+    content = st.text_area("에세이 내용 (300자 이상)", height=300)
+    btn = st.form_submit_button("평가 및 제출")
 
-if submitted:
-    if not student_id or not name or not essay_content:
-        st.warning("모든 정보를 입력해주세요.")
-    elif len(essay_content) < 300:
-        st.error(f"❌ 분량 미달 (현재 {len(essay_content)}자 / 300자 이상 필요)")
+if btn:
+    if len(content) < 300:
+        st.error(f"❌ 분량 미달 (현재 {len(content)}자)")
     else:
-        with st.spinner("AI가 과제를 검토하고 기록하는 중입니다..."):
-            # AI 평가
-            prompt = f"에세이 독창성 평가. 결과: Pass/Fail, 이유: 1문장.\n\n{essay_content}"
-            response = model.generate_content(prompt)
-            ai_comment = response.text
-            status = "합격" if "Pass" in ai_comment else "재검토"
-            
-            # 구글 시트에 실시간 기록
-            new_data = pd.DataFrame([{
-                "학번": student_id,
-                "이름": name,
-                "글자수": len(essay_content),
-                "AI평가": ai_comment,
-                "상태": status
-            }])
-            
-            # 시트 업데이트 (Sheet1에 누적)
-            existing_data = conn.read(worksheet="Sheet1")
-            updated_df = pd.concat([existing_data, new_data], ignore_index=True)
-            conn.update(worksheet="Sheet1", data=updated_df)
-            
-            st.success(f"✅ 제출 성공! {name} 학생은 [1차 {status}]입니다.")
-            st.info(f"AI 코멘트: {ai_comment}")
+        with st.spinner("AI 분석 중..."):
+            try:
+                model = genai.GenerativeModel(active_model)
+                response = model.generate_content(f"에세이 독창성 평가. 결과: Pass/Fail, 이유: 1문장.\n\n{content}")
+                ai_eval = response.text
+                res = "합격" if "Pass" in ai_eval else "재검토"
+                
+                # 구글 시트 저장
+                conn = st.connection("gsheets", type=GSheetsConnection)
+                new_row = pd.DataFrame([{"학번": sid, "이름": sname, "글자수": len(content), "AI의견": ai_eval, "결과": res}])
+                df = conn.read()
+                conn.update(data=pd.concat([df, new_row], ignore_index=True))
+                
+                st.balloons()
+                st.success(f"✅ {sname}님, 제출 완료! (AI 판정: {res})")
+            except Exception as e:
+                st.error(f"제출 오류: {e}")
