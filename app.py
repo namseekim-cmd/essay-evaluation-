@@ -6,7 +6,7 @@ import pandas as pd
 # [설정] 주소 중복 방지 완료
 SHEET_URL = "https://docs.google.com/spreadsheets/d/19j2Ikt7WIaDe4WOHciK1uBJY0z1n1tyE2Q7BpfPnAPA"
 
-st.set_page_config(page_title="2026 에세이 평가 시스템", page_icon="📝")
+st.set_page_config(page_title="2026 미술하기 생각하기 에세이 제출 시스템", page_icon="📝")
 
 # 1. AI 및 데이터베이스 설정
 try:
@@ -90,3 +90,4 @@ if submitted:
 
             except Exception as e:
                 st.error(f"❌ 제출 실패: {e}")
+
