@@ -125,7 +125,8 @@ else:
             elif sid in df['학번'].astype(str).values:
                 st.error(f"❌ 이미 해당 주차에 제출된 학번입니다.")
             else:
-                with st.spinner("AI가 글의 참신성과 AI 작성 가능성을 정밀하게 대조 분석 중입니다..."):
+                with st.spinner("AI 분석 및 데이터 저장중..."):
+                    final_ai_opinion = "분석 중 오류가 발생했습니다."
                     try:
                         # 2. AI 분석 수행
                         model = genai.GenerativeModel(active_model)
@@ -181,6 +182,7 @@ if not df.empty:
         # 의심도가 높은 순서대로 정렬해서 볼 수 있게 기능 제공
         show_df = df[['학번', '이름', 'AI의심도', '제출시간']].iloc[::-1]
         st.dataframe(show_df, use_container_width=True)
+
 
 
 
