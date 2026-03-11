@@ -155,16 +155,19 @@ else:
                                 ai_risk = line.split(':')[-1].strip()
 
                         # 데이터 저장
-                        new_data = pd.DataFrame([{
-                            "학번": str(sid), "이름": str(sname), 
-                            "글자수": len(content), 
-                            "AI의심도": ai_risk,
-                            "AI의견": result_text,
-                            "제출시간": datetime.now().strftime('%Y-%m-%d %H:%M')
-                        }])
+                       new_data = pd.DataFrame([{
+    "학번": str(sid),
+    "이름": str(sname),
+    "글자수": len(content),
+    "내용": content,  # 원문 저장을 위해 이 줄이 꼭 필요합니다
+    "AI의견": str(ai_comment),
+    "제출시간": datetime.now().strftime('%Y-%m-%d %H:%M')
+}])
 
-                        updated_df = pd.concat([df, new_data], ignore_index=True).astype(str)
-                        conn.update(worksheet=selected_week, data=updated_df)
+# 데이터 저장 시 모든 컬럼이 문자열로 인식되도록 설정
+updated_df = pd.concat([df, new_data], ignore_index=True).astype(str)
+conn.update(worksheet=selected_week, data=updated_df)
+
                         
                         st.balloons()
                         st.success("✅ 제출 성공! 당신의 사유가 안전하게 기록되었습니다.")
@@ -194,3 +197,4 @@ if not df.empty:
         # 의심도가 높은 순서대로 정렬해서 볼 수 있게 기능 제공
         show_df = df[['학번', '이름', 'AI의심도', '제출시간']].iloc[::-1]
         st.dataframe(show_df, use_container_width=True)
+
