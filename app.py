@@ -156,7 +156,8 @@ else:
                         
                         st.balloons()
                         st.success("✅ 제출 성공! 기록되었습니다.")
-                        st.rerun()
+                        st.rerun() 
+                        
                     except Exception as e:
                         st.error(f"❌ 분석 중 오류 발생: {e}")
 
@@ -181,6 +182,7 @@ if not df.empty:
         # 의심도가 높은 순서대로 정렬해서 볼 수 있게 기능 제공
         show_df = df[['학번', '이름', 'AI의심도', '제출시간']].iloc[::-1]
         st.dataframe(show_df, use_container_width=True)
+
 
 
 
