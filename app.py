@@ -127,33 +127,18 @@ else:
             else:
                 with st.spinner("AI가 글의 참신성과 AI 작성 가능성을 정밀하게 대조 분석 중입니다..."):
                     try:
+                        # 2. AI 분석 수행
                         model = genai.GenerativeModel(active_model)
-                        # [핵심] AI 탐지 및 참신성 평가 프롬프트
-                        prompt = f"""
-                        당신은 '미술하기와 생각하기' 수업의 평가관입니다. 다음 에세이를 읽고 분석하세요.
-                        
-                        [평가 항목]
-                        1. 결과: Pass 또는 Fail (참신함과 논리적 전개가 우수하면 Pass)
-                        2. AI 의심도: 0%~100% (기계적인 문체, 상투적 구조, 구체적인 개인 경험 부재 시 수치가 높음)
-                        3. 종합 의견: 참신한 관점과 AI 작성 의심 근거를 포함한 1문장 요약.
-
-                        반드시 아래 형식을 엄수하세요:
-                        결과: [내용]
-                        AI 의심도: [숫자]%
-                        종합 의견: [내용]
-
-                        에세이 내용:
-                        {content}
-                        """
+                        prompt = f"미술에 대한 참신성 평가(Pass/Fail 및 1문장 요약):\n\n{content}"
                         response = model.generate_content(prompt)
-                        result_text = response.text
                         
-                        # 결과에서 AI 의심도만 추출 (시트 저장용)
-                        ai_risk = "0%"
-                        for line in result_text.split('\n'):
-                            if "AI 의심도:" in line:
-                                ai_risk = line.split(':')[-1].strip()
-
+                        # AI 대답이 정상적으로 오면 변수에 할당
+                        if response and response.text:
+                            ai_comment = response.text
+                        else:
+                            ai_comment = "AI가 응답을 생성하지 못했습니다."
+                            
+                            
                         # 데이터 저장
                         new_data = pd.DataFrame([{
                          "학번": str(sid),
@@ -196,6 +181,7 @@ if not df.empty:
         # 의심도가 높은 순서대로 정렬해서 볼 수 있게 기능 제공
         show_df = df[['학번', '이름', 'AI의심도', '제출시간']].iloc[::-1]
         st.dataframe(show_df, use_container_width=True)
+
 
 
 
