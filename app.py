@@ -121,46 +121,65 @@ else:
             if not sid or not sname:
                 st.warning("학번과 이름을 입력해 주세요.")
             elif len(content) < 1500:
-                st.error(f"❌ 제출 실패: 현재 {len(content)}자입니다. (최소 1500자 이상 작성 필수)")
+                st.error(f"❌ 글자수 부족 (현재 {len(content)}자 / 최소 1500자 필요)")
             elif sid in df['학번'].astype(str).values:
-                st.error(f"❌ 이미 해당 주차에 제출된 학번입니다.")
+                st.error(f"❌ 이미 제출된 학번입니다.")
             else:
-                with st.spinner("AI 분석 및 데이터 저장중..."):
-                    final_ai_opinion = "분석 중 오류가 발생했습니다."
+                with st.spinner("AI가 에세이를 정밀 분석 중입니다..."):
+                    # 변수 초기화
+                    summary_text = "요약 실패"
+                    final_ai_opinion = "분석 실패"
+                    ai_suspicion = "0%"
+                    
                     try:
-                        # 2. AI 분석 수행
                         model = genai.GenerativeModel(active_model)
-                        prompt = f"미술에 대한 참신성 평가(Pass/Fail 및 1문장 요약):\n\n{content}"
+                        # AI에게 명확한 형식을 요구하는 프롬프트
+                        prompt = f"""
+                        미술 에세이 전문가로서 다음 글을 분석하고 반드시 아래 형식을 지켜 응답하세요.
+                        
+                        1. 1문장 요약: 전체 내용을 관통하는 핵심 사유를 한 문장으로 요약
+                        2. 참신성 평가: Pass/Fail 여부와 구체적인 비평 의견
+                        3. AI 의심도: 0%~100% 사이의 수치
+                        
+                        내용:
+                        {content}
+                        """
                         response = model.generate_content(prompt)
                         
-                        # AI 대답이 정상적으로 오면 변수에 할당
                         if response and response.text:
-                            ai_comment = response.text
-                        else:
-                            ai_comment = "AI가 응답을 생성하지 못했습니다."
+                            full_text = response.text
+                            final_ai_opinion = full_text # 전체 의견 저장
                             
+                            # 정규표현식으로 각 항목 추출
+                            import re
+                            s_match = re.search(r'1문장 요약:\s*(.*)', full_text)
+                            d_match = re.search(r'AI 의심도:\s*(\d+%)', full_text)
                             
-                        # 데이터 저장
+                            if s_match: summary_text = s_match.group(1).split('\n')[0]
+                            if d_match: ai_suspicion = d_match.group(1)
+
+                        # 데이터 생성 (시트 컬럼 순서와 일치)
                         new_data = pd.DataFrame([{
-                         "학번": str(sid),
-                         "이름": str(sname),
-                         "글자수": len(content),
-                         "내용": content,  # 원문 저장을 위해 이 줄이 꼭 필요합니다
-                         "AI의견": str(ai_comment),
-                         "제출시간": datetime.now().strftime('%Y-%m-%d %H:%M')
+                            "학번": str(sid), 
+                            "이름": str(sname), 
+                            "글자수": len(content), 
+                            "내용": content, 
+                            "1문장요약": summary_text, # [추가] 핵심 요약
+                            "AI의견": final_ai_opinion,
+                            "AI의심도": ai_suspicion,
+                            "제출시간": datetime.now().strftime('%Y-%m-%d %H:%M')
                         }])
 
-# 데이터 저장 시 모든 컬럼이 문자열로 인식되도록 설정
                         updated_df = pd.concat([df, new_data], ignore_index=True).astype(str)
                         conn.update(worksheet=selected_week, data=updated_df)
                         
                         st.balloons()
-                        st.success("✅ 제출 성공! 기록되었습니다.")
-                        st.rerun() 
-                        
-                    except Exception as e:
-                        st.error(f"❌ 분석 중 오류 발생: {e}")
+                        st.success(f"✅ 제출 완료! 요약: {summary_text}")
+                        # st.rerun() 은 시각 효과를 위해 제거하거나 sleep 후 사용하세요.
 
+                    except Exception as e:
+                        st.error(f"❌ 오류 발생: {e}")
+          
 # ==========================================
 # 6. 하단 데이터 확인 및 관리 도구
 # ==========================================
@@ -182,6 +201,7 @@ if not df.empty:
         # 의심도가 높은 순서대로 정렬해서 볼 수 있게 기능 제공
         show_df = df[['학번', '이름', 'AI의심도', '제출시간']].iloc[::-1]
         st.dataframe(show_df, use_container_width=True)
+
 
 
 
