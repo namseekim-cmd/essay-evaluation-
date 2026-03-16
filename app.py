@@ -74,7 +74,7 @@ try:
     df = conn.read(worksheet=selected_week, ttl=0)
 except:
     # 시트가 없으면 생성될 수 있도록 초기 틀 마련
-    df = pd.DataFrame(columns=["학번", "이름", "글자수", "AI의심도", "AI의견", "제출시간"])
+    df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
 
 st.divider()
 
@@ -190,7 +190,7 @@ with st.expander("🛠️ 시스템 관리자 메뉴"):
     pw = st.text_input("Admin Password", type="password")
     if pw == "1234":
         if st.button(f"🔥 {selected_week} 데이터 초기화 (주의)"):
-            empty_df = pd.DataFrame(columns=["학번", "이름", "글자수", "AI의심도", "AI의견", "제출시간"])
+            empty_df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
             conn.update(worksheet=selected_week, data=empty_df)
             st.success("초기화되었습니다.")
             st.rerun()
