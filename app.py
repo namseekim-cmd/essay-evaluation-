@@ -32,11 +32,15 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+from datetime import datetime, timedelta # timedelta 추가
+
 # ==========================================
-# 2. 시간 설정 및 제출 기한 체크
+# 2. 시간 설정 및 제출 기한 체크 (한국 시간 기준)
 # ==========================================
-now = datetime.now()
+# 서버 시간(UTC)에 9시간을 더해 한국 시간(KST)으로 변환
+now = datetime.utcnow() + timedelta(hours=9) 
 weekday = now.weekday()  # 월(0) ~ 일(6)
+
 # 수요일(2) 00:00부터 일요일(6) 23:59까지 열림
 is_open = 2 <= weekday <= 6
 
