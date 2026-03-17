@@ -2,7 +2,8 @@ import streamlit as st
 import google.generativeai as genai
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
+import re
 
 # ==========================================
 # 1. 시스템 보안 설정 (외부 링크 완전 차단)
