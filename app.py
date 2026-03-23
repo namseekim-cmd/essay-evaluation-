@@ -75,13 +75,21 @@ selected_week = st.selectbox(
     [f"Week{i:02d}" for i in range(1, 13)]
 )
 
+# [수정된 부분] 변수를 먼저 빈 값으로 만들어 에러를 방지합니다.
+df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
+roster_df = pd.DataFrame(columns=["학번", "이름"])
+
 try:
+    # 1. 현재 주차 데이터 읽기
     df = conn.read(worksheet=selected_week, ttl=0)
-    # [추가] 전체 학생 출석부 데이터 (시트 탭 이름을 'Roster'로 만들어주세요)
+except Exception as e:
+    st.info(f"{selected_week} 시트를 읽는 중입니다.")
+
+try:
+    # 2. 전체 출석부(Roster) 읽기
     roster_df = conn.read(worksheet="Roster", ttl=0)
-except:
-    # 시트가 없으면 생성될 수 있도록 초기 틀 마련
-    df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
+except Exception as e:
+    st.error("⚠️ 'Roster' 시트를 찾을 수 없습니다. 미제출자 명단 기능을 위해 구글 시트에 'Roster' 탭을 만들어주세요.")
 
 st.divider()
 
