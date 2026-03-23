@@ -193,6 +193,30 @@ else:
 # ==========================================
 st.divider()
 
+# 1. 제출 명단 확인
+with st.expander(f"📋 {selected_week} 제출 완료자 명단"):
+    if not df.empty:
+        show_df = df[['학번', '이름', 'AI의심도', '제출시간']].iloc[::-1]
+        st.dataframe(show_df, use_container_width=True)
+    else:
+        st.info("아직 제출자가 없습니다.")
+
+# 2. [신규] 미제출 명단 확인
+with st.expander(f"⚠️ {selected_week} 미제출자 명단 확인"):
+    if not roster_df.empty:
+        # 제출자 학번 리스트 (문자열로 통일하여 비교)
+        submitted_sids = set(df['학번'].astype(str).unique())
+        # 전체 학생 중 제출자 학번에 없는 학생만 추출
+        non_submitters = roster_df[~roster_df['학번'].astype(str).isin(submitted_sids)]
+        
+        if not non_submitters.empty:
+            st.warning(f"현재 총 {len(non_submitters)}명이 에세이를 제출하지 않았습니다.")
+            st.dataframe(non_submitters[['학번', '이름']], use_container_width=True)
+        else:
+            st.success("🎉 모든 학생이 제출을 완료했습니다!")
+    else:
+        st.error("'Roster' 시트를 찾을 수 없습니다. 구글 시트에 학생 명단을 추가해 주세요.")
+        
 # 관리자 모드
 with st.expander("🛠️ 시스템 관리자 메뉴"):
     pw = st.text_input("Admin Password", type="password")
