@@ -77,6 +77,8 @@ selected_week = st.selectbox(
 
 try:
     df = conn.read(worksheet=selected_week, ttl=0)
+    # [추가] 전체 학생 출석부 데이터 (시트 탭 이름을 'Roster'로 만들어주세요)
+    roster_df = conn.read(worksheet="Roster", ttl=0)
 except:
     # 시트가 없으면 생성될 수 있도록 초기 틀 마련
     df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
@@ -87,8 +89,9 @@ st.divider()
 c1, c2, c3, c4 = st.columns(4)
 with c1: st.metric("총 제출", f"{len(df)}명")
 with c2: 
-    pass_cnt = df['AI의견'].str.contains("Pass").sum() if not df.empty else 0
-    st.metric("Pass 건수", f"{pass_cnt}건")
+    # 미제출자 수 계산
+    non_submit_count = len(roster_df) - len(df) if not roster_df.empty else 0
+    st.metric("미제출", f"{max(0, non_submit_count)}명")
 with c3:
     avg_len = int(df['글자수'].astype(int).mean()) if not df.empty else 0
     st.metric("평균 글자수", f"{avg_len}자")
