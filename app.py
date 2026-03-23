@@ -79,32 +79,33 @@ selected_week = st.selectbox(
 df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
 roster_df = pd.DataFrame(columns=["학번", "이름"])
 
+# [위치 4번 섹션] 이 코드로 교체하세요
 try:
-    # 1. 현재 주차 데이터 읽기
+    # 1. 현재 주차 제출자 데이터 로드
     df = conn.read(worksheet=selected_week, ttl=0)
-except Exception as e:
-    st.info(f"{selected_week} 시트를 읽는 중입니다.")
-
-try:
-    # 2. 전체 출석부(Roster) 읽기
+    # 2. 전체 학생 명단 로드 (구글 시트에 'Roster' 탭이 있어야 함)
     roster_df = conn.read(worksheet="Roster", ttl=0)
-except Exception as e:
-    st.error("⚠️ 'Roster' 시트를 찾을 수 없습니다. 미제출자 명단 기능을 위해 구글 시트에 'Roster' 탭을 만들어주세요.")
+except Exception:
+    df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
+    roster_df = pd.DataFrame(columns=["학번", "이름"])
 
 st.divider()
 
-# 실시간 현황 요약
+# 실시간 현황 요약 (정확한 계산 로직 적용)
 c1, c2, c3, c4 = st.columns(4)
-with c1: st.metric("총 제출", f"{len(df)}명")
+
+# 중복을 제외한 실제 제출 인원 계산
+actual_submit_count = df['학번'].astype(str).str.strip().nunique() if not df.empty else 0
+total_roster_count = len(roster_df) if not roster_df.empty else 0
+
+with c1: st.metric("총 제출", f"{actual_submit_count}명")
 with c2: 
-    # 미제출자 수 계산
-    non_submit_count = len(roster_df) - len(df) if not roster_df.empty else 0
+    non_submit_count = total_roster_count - actual_submit_count
     st.metric("미제출", f"{max(0, non_submit_count)}명")
 with c3:
-    avg_len = int(df['글자수'].astype(int).mean()) if not df.empty else 0
+    avg_len = int(df['글자수'].astype(float).mean()) if not df.empty else 0
     st.metric("평균 글자수", f"{avg_len}자")
 with c4:
-    # AI 의심도 평균값 계산
     try:
         avg_ai = f"{df['AI의심도'].str.replace('%','').astype(float).mean():.1f}%" if not df.empty else "0%"
     except: avg_ai = "N/A"
@@ -199,32 +200,36 @@ else:
 # ==========================================
 # 6. 하단 데이터 확인 및 관리 도구
 # ==========================================
+# [위치 6번 섹션] 이 코드로 교체하세요
 st.divider()
 
-# 1. 제출 명단 확인
+# 1. 제출 완료자 확인
 with st.expander(f"📋 {selected_week} 제출 완료자 명단"):
     if not df.empty:
+        # 최신순으로 정렬하여 필요한 정보만 표시
         show_df = df[['학번', '이름', 'AI의심도', '제출시간']].iloc[::-1]
         st.dataframe(show_df, use_container_width=True)
     else:
         st.info("아직 제출자가 없습니다.")
 
-# 2. [신규] 미제출 명단 확인
+# 2. 미제출자 명단 확인 (Roster와 대조)
 with st.expander(f"⚠️ {selected_week} 미제출자 명단 확인"):
     if not roster_df.empty:
-        # 제출자 학번 리스트 (문자열로 통일하여 비교)
-        submitted_sids = set(df['학번'].astype(str).unique())
-        # 전체 학생 중 제출자 학번에 없는 학생만 추출
-        non_submitters = roster_df[~roster_df['학번'].astype(str).isin(submitted_sids)]
+        # 양쪽 데이터의 학번 형식을 맞춤 (공백 제거 및 문자열화)
+        submitted_sids = set(df['학번'].astype(str).str.strip().unique())
+        roster_df['학번_clean'] = roster_df['학번'].astype(str).str.strip()
+        
+        # 전체 명단 중 제출자 세트에 없는 학생만 추출
+        non_submitters = roster_df[~roster_df['학번_clean'].isin(submitted_sids)]
         
         if not non_submitters.empty:
-            st.warning(f"현재 총 {len(non_submitters)}명이 에세이를 제출하지 않았습니다.")
+            st.warning(f"현재 총 {len(non_submitters)}명이 미제출 상태입니다.")
             st.dataframe(non_submitters[['학번', '이름']], use_container_width=True)
         else:
-            st.success("🎉 모든 학생이 제출을 완료했습니다!")
+            st.success("🎉 모든 학생이 에세이 제출을 완료했습니다!")
     else:
-        st.error("'Roster' 시트를 찾을 수 없습니다. 구글 시트에 학생 명단을 추가해 주세요.")
-        
+        st.error("구글 시트에 'Roster' 탭(전체 명단)이 있는지 확인해 주세요.")
+
 # 관리자 모드
 with st.expander("🛠️ 시스템 관리자 메뉴"):
     pw = st.text_input("Admin Password", type="password")
