@@ -66,7 +66,7 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 4. 본문 상단: 주차 선택 및 데이터 로드 (최종 안정화 버전)
+# 4. 본문 상단: 주차 선택 및 데이터 로드 (최종 유연성 확보 버전)
 # ==========================================
 st.title("🎨 2026 미술하기 생각하기 에세이")
 
@@ -75,65 +75,55 @@ selected_week = st.selectbox(
     [f"Week{i:02d}" for i in range(1, 13)]
 )
 
-# [보안 & 안정화] 데이터를 읽어오지 못하면 덮어쓰기를 방지하기 위해 앱을 중단시킵니다.
+# [Step 1] 전체 학생 명단(Roster) 로드 - 시스템의 기준점
 try:
-    # 1. 전체 학생 명단(Roster) 로드
     roster_df = conn.read(worksheet="Roster", ttl=0)
-    if roster_df.empty:
-        st.error("⚠️ 'Roster' 탭에 학생 명단이 없습니다.")
-        st.stop()
-    
-    # Roster 데이터 클리닝 (학번/이름 빈 칸 제거)
-    roster_df = roster_df.dropna(subset=['학번', '이름'])
+    # 데이터 클리닝
+    roster_df = roster_df.dropna(subset=['학번'])
     roster_df['학번'] = roster_df['학번'].astype(str).str.strip()
     roster_df = roster_df[roster_df['학번'] != ""]
-
-    # 2. 현재 주차 제출자 데이터 로드
-    try:
-        df = conn.read(worksheet=selected_week, ttl=0)
-        # 제출 데이터 클리닝 (유령 데이터 제거)
-        if not df.empty:
-            df = df.dropna(subset=['학번'])
-            df['학번'] = df['학번'].astype(str).str.strip()
-            df = df[df['학번'] != ""]
-    except Exception as e:
-        # 시트가 아예 없는 경우(새 주차)에만 빈 데이터프레임 생성
-        if "Worksheet not found" in str(e):
-            df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
-        else:
-            # 일시적인 네트워크 오류 시 데이터 덮어쓰기 방지를 위해 멈춤
-            st.error(f"⚠️ 데이터를 불러오는 중 오류가 발생했습니다: {e}")
-            st.warning("데이터 유실 방지를 위해 현재 제출 기능을 일시 차단합니다. 새로고침 해주세요.")
-            st.stop()
-
 except Exception as e:
-    st.error(f"⚠️ 시스템 오류: 'Roster' 시트 확인이 필요합니다. ({e})")
+    st.error(f"⚠️ 'Roster' 시트를 불러올 수 없습니다. 시트 이름을 확인해 주세요. ({e})")
     st.stop()
+
+# [Step 2] 선택한 주차 데이터 로드 - 에러가 나도 무조건 '새 시작' 허용
+try:
+    df = conn.read(worksheet=selected_week, ttl=0)
+    
+    # 읽어온 데이터가 비어있거나 제목줄만 있는 경우 처리
+    if df is None or df.empty or '학번' not in df.columns:
+        df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
+    else:
+        # 정상 데이터 클리닝
+        df = df.dropna(subset=['학번'])
+        df['학번'] = df['학번'].astype(str).str.strip()
+        df = df[df['학번'] != ""]
+
+except Exception:
+    # [핵심] Week08 등 시트가 존재하더라도 읽기 오류가 나면 
+    # 기존 데이터를 보호하면서 새 데이터를 받을 수 있게 빈 틀을 제공합니다.
+    df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
+    st.info(f"📍 {selected_week}의 첫 번째 제출을 받을 준비가 되었습니다.")
 
 st.divider()
 
-# [정밀 계산] 숫자 일치를 위한 로직
-# 1. 총 제출: 중복을 제외한 고유 학번 개수
+# [Step 3] 현황판 계산 (에러 방지용 안전 장치 포함)
 actual_submit_count = df['학번'].nunique() if not df.empty else 0
-# 2. 전체 인원: Roster 시트의 고유 학번 개수
 total_roster_count = roster_df['학번'].nunique() if not roster_df.empty else 0
-# 3. 미제출: 전체 인원 - 실제 제출 인원
 non_submit_count = total_roster_count - actual_submit_count
 
-# 실시간 현황 요약 출력
 c1, c2, c3, c4 = st.columns(4)
 with c1: st.metric("총 제출", f"{actual_submit_count}명")
 with c2: st.metric("미제출", f"{max(0, non_submit_count)}명")
 with c3:
-    # 글자수 평균 (숫자가 아닌 경우 제외)
-    if not df.empty:
-        df['글자수_val'] = pd.to_numeric(df['글자수'], errors='coerce')
-        avg_len = int(df['글자수_val'].mean()) if not df['글자수_val'].isna().all() else 0
+    if not df.empty and '글자수' in df.columns:
+        df['글자수_n'] = pd.to_numeric(df['글자수'], errors='coerce')
+        avg_len = int(df['글자수_n'].mean()) if not df['글자수_n'].isna().all() else 0
     else: avg_len = 0
     st.metric("평균 글자수", f"{avg_len}자")
 with c4:
     try:
-        avg_ai = f"{df['AI의심도'].str.replace('%','').astype(float).mean():.1f}%" if not df.empty else "0%"
+        avg_ai = f"{df['AI의심도'].str.replace('%','').astype(float).mean():.1f}%" if not df.empty and 'AI의심도' in df.columns else "0%"
     except: avg_ai = "N/A"
     st.metric("평균 AI 의심도", avg_ai)
 
