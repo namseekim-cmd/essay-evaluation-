@@ -59,31 +59,61 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 4. 본문 상단: 데이터 로드 (데이터 보호 완전판)
+# 4. 본문 상단: 주차 선택 및 데이터 로드 (데이터 보호 완전판)
 # ==========================================
+st.title("🎨 2026 미술하기 생각하기 에세이")
+
+# [1] 변수 정의가 가장 먼저 와야 합니다.
+selected_week = st.selectbox(
+    "📅 현재 제출하시려는 주차를 선택해 주세요", 
+    [f"Week{i:02d}" for i in range(1, 13)]
+)
+
+# [2] 그 다음 데이터를 안전하게 읽어옵니다.
 try:
-    # TTL을 설정하여 구글 API 호출 횟수를 줄입니다 (Quota 에러 방지)
+    # Quota 에러 방지를 위해 TTL 설정
     roster_df = conn.read(worksheet="Roster", ttl=3600)
     df = conn.read(worksheet=selected_week, ttl=60)
     
-    # [핵심] 데이터가 읽히지 않았을 때의 처리
+    # 데이터 로드 검증
     if df is None:
         raise ValueError("시트 데이터를 읽어올 수 없습니다.")
         
     if df.empty or '학번' not in df.columns:
-        # 진짜로 시트가 비어있는 경우에만 빈 DF 생성
         df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
     else:
         df = df.dropna(subset=['학번'])
         df['학번'] = df['학번'].astype(str).str.strip()
+        df = df[df['학번'] != ""]
 
 except Exception as e:
-    # 접속 제한(429)이나 네트워크 에러 시 앱을 여기서 멈춥니다.
-    # 이렇게 해야 '빈 표'로 기존 데이터를 덮어쓰는 사고를 원천 차단합니다.
+    # 여기서 에러가 나도 'selected_week'가 위에 정의되어 있으므로 NameError가 나지 않습니다.
     st.error(f"⚠️ 구글 서버 연결 지연 (에러: {e})")
     st.warning("데이터 보호를 위해 제출 기능이 잠시 차단되었습니다. 1분 뒤 '새로고침(F5)' 해주세요.")
-    st.stop() # 사고 방지용 강력 브레이크
+    st.stop() 
 
+st.divider()
+
+# [Step 3] 현황판 계산
+actual_submit_count = df['학번'].nunique() if not df.empty else 0
+total_roster_count = roster_df['학번'].nunique() if not roster_df.empty else 0
+non_submit_count = total_roster_count - actual_submit_count
+
+c1, c2, c3, c4 = st.columns(4)
+with c1: st.metric("총 제출", f"{actual_submit_count}명")
+with c2: st.metric("미제출", f"{max(0, non_submit_count)}명")
+with c3:
+    if not df.empty and '글자수' in df.columns:
+        df['글자수_n'] = pd.to_numeric(df['글자수'], errors='coerce')
+        avg_len = int(df['글자수_n'].mean()) if not df['글자수_n'].isna().all() else 0
+    else: avg_len = 0
+    st.metric("평균 글자수", f"{avg_len}자")
+with c4:
+    try:
+        avg_ai = f"{df['AI의심도'].str.replace('%','').astype(float).mean():.1f}%" if not df.empty and 'AI의심도' in df.columns else "0%"
+    except: avg_ai = "N/A"
+    st.metric("평균 AI 의심도", avg_ai)
+    
 # ==========================================
 # 5. 에세이 제출 폼
 # ==========================================
