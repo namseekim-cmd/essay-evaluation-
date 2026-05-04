@@ -3,7 +3,6 @@ import google.generativeai as genai
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime, timedelta
-import re
 import time
 
 # ==========================================
@@ -33,29 +32,21 @@ st.markdown("""
 # ==========================================
 # 2. 시간 설정 및 제출 기한 체크
 # ==========================================
-# datetime.utcnow() 대신 timezone을 고려한 설정을 권장하지만, 기존 로직을 유지합니다.
 now = datetime.utcnow() + timedelta(hours=9) 
 weekday = now.weekday() 
 is_open = 2 <= weekday <= 6 # 수(2) ~ 일(6)
 
 # ==========================================
-# 3. AI 모델 및 데이터베이스 연결
+# 3. 데이터베이스 및 AI 설정 (API 부하 최적화)
 # ==========================================
 try:
-    api_key = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=api_key)
+    # [부하 감소 1] AI 모델 목록을 조회하지 않고 고정된 최신 모델명을 직접 사용합니다.
+    active_model = 'models/gemini-1.5-flash-latest'
     
-    @st.cache_resource
-    def get_latest_model():
-        available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        for p in ['models/gemini-3-flash', 'models/gemini-1.5-flash-latest']:
-            if p in available: return p
-        return available[0]
-    
-    active_model = get_latest_model()
+    # 구글 시트 연결
     conn = st.connection("gsheets", type=GSheetsConnection)
 except Exception as e:
-    st.error(f"⚠️ 시스템 오류: Secrets 설정을 확인하세요. ({e})")
+    st.error(f"⚠️ 시스템 초기화 오류: ({e})")
     st.stop()
 
 # ==========================================
@@ -63,31 +54,30 @@ except Exception as e:
 # ==========================================
 st.title("🎨 2026 미술하기 생각하기 에세이")
 
-# [1] 변수 정의가 가장 먼저 와야 합니다.
+# [1] 변수 정의 (NameError 방지)
 selected_week = st.selectbox(
     "📅 현재 제출하시려는 주차를 선택해 주세요", 
     [f"Week{i:02d}" for i in range(1, 13)]
 )
 
-# [2] 그 다음 데이터를 안전하게 읽어옵니다.
+# [2] 데이터 안전 로드 (TTL 설정으로 429 에러 방지)
 try:
-    # Quota 에러 방지를 위해 TTL 설정
+    # Roster는 1시간(3600초), 주차별 데이터는 1분(60초) 캐시 사용
     roster_df = conn.read(worksheet="Roster", ttl=3600)
     df = conn.read(worksheet=selected_week, ttl=60)
     
-    # 데이터 로드 검증
     if df is None:
-        raise ValueError("시트 데이터를 읽어올 수 없습니다.")
+        raise ValueError("시트를 읽어올 수 없습니다.")
         
     if df.empty or '학번' not in df.columns:
         df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
     else:
+        # 데이터 클리닝 (학번 기준)
         df = df.dropna(subset=['학번'])
         df['학번'] = df['학번'].astype(str).str.strip()
         df = df[df['학번'] != ""]
 
 except Exception as e:
-    # 여기서 에러가 나도 'selected_week'가 위에 정의되어 있으므로 NameError가 나지 않습니다.
     st.error(f"⚠️ 구글 서버 연결 지연 (에러: {e})")
     st.warning("데이터 보호를 위해 제출 기능이 잠시 차단되었습니다. 1분 뒤 '새로고침(F5)' 해주세요.")
     st.stop() 
@@ -95,12 +85,13 @@ except Exception as e:
 st.divider()
 
 # [Step 3] 현황판 계산
+# nunique()를 사용하여 중복 제출자를 1명으로 정확히 계산합니다.
 actual_submit_count = df['학번'].nunique() if not df.empty else 0
 total_roster_count = roster_df['학번'].nunique() if not roster_df.empty else 0
 non_submit_count = total_roster_count - actual_submit_count
 
 c1, c2, c3, c4 = st.columns(4)
-with c1: st.metric("총 제출", f"{actual_submit_count}명")
+with c1: st.metric("총 제출 (실인원)", f"{actual_submit_count}명")
 with c2: st.metric("미제출", f"{max(0, non_submit_count)}명")
 with c3:
     if not df.empty and '글자수' in df.columns:
@@ -109,13 +100,11 @@ with c3:
     else: avg_len = 0
     st.metric("평균 글자수", f"{avg_len}자")
 with c4:
-    try:
-        avg_ai = f"{df['AI의심도'].str.replace('%','').astype(float).mean():.1f}%" if not df.empty and 'AI의심도' in df.columns else "0%"
-    except: avg_ai = "N/A"
-    st.metric("평균 AI 의심도", avg_ai)
-    
+    # 분석 생략 시 N/A로 표시
+    st.metric("평균 AI 의심도", "N/A")
+
 # ==========================================
-# 5. 에세이 제출 폼
+# 5. 에세이 제출 폼 (AI 분석 최소화 버전)
 # ==========================================
 st.divider()
 
@@ -123,7 +112,7 @@ if not is_open:
     st.warning("⚠️ 지금은 제출 기간이 아닙니다. (제출 가능: 매주 수요일 00:00 ~ 일요일 23:59)")
 else:
     with st.form("essay_form", clear_on_submit=True):
-        st.success(f"📍 현재 **[{selected_week}]** 에세이 정밀 분석 중입니다.")
+        st.success(f"📍 현재 **[{selected_week}]** 에세이 제출이 가능합니다.")
         cid, cname = st.columns(2)
         with cid: sid = st.text_input("학번 (숫자만)").strip()
         with cname: sname = st.text_input("이름").strip()
@@ -134,7 +123,7 @@ else:
             placeholder="당신만의 경험과 사유를 적어주세요."
         )
         
-        submitted = st.form_submit_button(f"🚀 {selected_week} 에세이 제출 및 AI 분석")
+        submitted = st.form_submit_button(f"🚀 {selected_week} 에세이 제출하기")
 
         if submitted:
             if not sid or not sname:
@@ -144,48 +133,41 @@ else:
             elif sid in df['학번'].values:
                 st.error(f"❌ 이미 제출된 학번입니다.")
             else:
-                with st.spinner("AI 분석 중..."):
-                    try:
-                        model = genai.GenerativeModel(active_model)
-                        prompt = f"미술 에세이 분석: 1. 1문장 요약, 2. AI 의심도(%), 3. 의견(Pass/Fail 포함)\n\n내용:\n{content}"
-                        response = model.generate_content(prompt)
-                        
-                        full_text = response.text if response else ""
-                        s_match = re.search(r'1문장 요약:\s*(.*)', full_text)
-                        d_match = re.search(r'AI 의심도:\s*(\d+%)', full_text)
-                        
-                        summary = s_match.group(1).split('\n')[0] if s_match else "요약 실패"
-                        suspicion = d_match.group(1) if d_match else "0%"
+                try:
+                    # [부하 감소 2] AI 분석(Gemini 호출) 과정을 생략하고 즉시 저장 데이터 생성
+                    new_data = pd.DataFrame([{
+                        "학번": sid, 
+                        "이름": sname, 
+                        "글자수": len(content), 
+                        "내용": content, 
+                        "1문장요약": "분석 생략", 
+                        "AI의견": "정상 제출됨", 
+                        "AI의심도": "0%", 
+                        "제출시간": now.strftime('%Y-%m-%d %H:%M')
+                    }])
 
-                        new_data = pd.DataFrame([{
-                            "학번": sid, "이름": sname, "글자수": len(content), 
-                            "내용": content, "1문장요약": summary, 
-                            "AI의견": full_text, "AI의심도": suspicion, 
-                            "제출시간": now.strftime('%Y-%m-%d %H:%M')
-                        }])
+                    # 시트 업데이트
+                    updated_df = pd.concat([df, new_data], ignore_index=True).astype(str)
+                    conn.update(worksheet=selected_week, data=updated_df)
+                    
+                    st.balloons()
+                    st.success(f"✅ 제출 완료! 현황 업데이트를 위해 잠시만 기다려주세요...")
+                    time.sleep(2)
+                    st.rerun()
 
-                        updated_df = pd.concat([df, new_data], ignore_index=True).astype(str)
-                        conn.update(worksheet=selected_week, data=updated_df)
-                        
-                        st.balloons()
-                        st.success(f"✅ 제출 완료! 화면을 갱신합니다...")
-                        time.sleep(2) # 성공 메시지를 볼 시간 확보
-                        st.rerun() # 현황판 즉시 업데이트
-
-                    except Exception as e:
-                        st.error(f"❌ 오류 발생: {e}")
+                except Exception as e:
+                    st.error(f"❌ 제출 중 오류 발생: {e}")
 
 # ==========================================
 # 6. 하단 데이터 확인 및 관리 도구
 # ==========================================
 st.divider()
-
 col_sub, col_non = st.columns(2)
 
 with col_sub:
-    with st.expander(f"📋 {selected_week} 제출 완료자 명단"):
+    with st.expander(f"📋 {selected_week} 제출 완료자 확인"):
         if not df.empty:
-            st.dataframe(df[['학번', '이름', 'AI의심도', '제출시간']].iloc[::-1], use_container_width=True)
+            st.dataframe(df[['학번', '이름', '제출시간']].iloc[::-1], use_container_width=True)
         else:
             st.info("제출자가 없습니다.")
 
@@ -197,7 +179,7 @@ with col_non:
             if not non_submitters.empty:
                 st.dataframe(non_submitters[['학번', '이름']], use_container_width=True)
             else:
-                st.success("전원 제출 완료!")
+                st.success("🎉 전원 제출 완료!")
 
 with st.expander("🛠️ 시스템 관리자 메뉴"):
     pw = st.text_input("Admin Password", type="password", key="admin_pw")
