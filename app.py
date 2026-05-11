@@ -45,9 +45,8 @@ try:
 except Exception as e:
     st.error(f"⚠️ 시스템 초기화 오류: ({e})")
     st.stop()
-
 # ==========================================
-# 4. 데이터 로드 및 덮어쓰기 방지 (보안 강화)
+# 4. 데이터 로드: 덮어쓰기 방지 + 학번 형식 정화 (정렬 수정본)
 # ==========================================
 st.title("🎨 2026 미술하기 생각하기 에세이")
 
@@ -67,31 +66,27 @@ try:
     roster_df = conn.read(worksheet="Roster", ttl=3600)
     df = conn.read(worksheet=selected_week, ttl=60)
     
-    # [데이터 보호 로직] 
-    # 1. 시트 로드 자체가 실패한 경우
+    # [보안 장치 1] 시트 읽기 실패 시 중단
     if df is None:
-        st.error("⚠️ 구글 시트에서 데이터를 가져올 수 없습니다. 잠시 후 새로고침(F5) 해주세요.")
+        st.error("⚠️ 구글 서버 연결 실패. 잠시 후 새로고침(F5) 해주세요.")
         st.stop()
         
-    # 2. 시트가 비어있는 것처럼 보일 때 (가장 위험한 순간)
+    # [보안 장치 2] 시트 데이터 정제 및 초기화
     if df.empty or '학번' not in df.columns:
-        # 진짜 첫 제출인지 확인하기 위한 메시지
-        st.warning(f"📍 {selected_week}에 아직 저장된 데이터가 없거나 불러오는 중입니다.")
-        # 빈 데이터프레임 초기화
+        st.info(f"📍 {selected_week}의 첫 번째 제출을 기다리고 있습니다.")
         df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
     else:
-        # 데이터 클리닝: 학번을 문자열로 통일하고 공백 제거 (명단 대조용)
+        # 불러온 데이터의 학번 정리 (.0 제거)
         df['학번'] = df['학번'].apply(clean_id)
         df = df[df['학번'] != ""]
         
-    # Roster 데이터 클리닝
-   if not roster_df.empty:
+    # [보안 장치 3] 명단 데이터 정제
+    if not roster_df.empty:
         roster_df['학번'] = roster_df['학번'].apply(clean_id)
         roster_df = roster_df[roster_df['학번'] != ""]
 
 except Exception as e:
-    st.error(f"⚠️ 데이터 로드 중 오류가 발생했습니다. (에러: {e})")
-    st.info("데이터 보호를 위해 현재 제출 기능이 잠시 차단되었습니다. 1분 뒤 새로고침 해주세요.")
+    st.error(f"⚠️ 시스템 보호 모드 작동 (에러: {e})")
     st.stop() 
 
 st.divider()
@@ -111,7 +106,7 @@ with c3:
     else: avg_len = 0
     st.metric("평균 글자수", f"{avg_len}자")
 with c4: st.metric("평균 AI 의심도", "N/A")
-
+    
 # ==========================================
 # 5. 에세이 제출 폼
 # ==========================================
