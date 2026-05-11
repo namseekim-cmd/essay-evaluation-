@@ -56,6 +56,12 @@ selected_week = st.selectbox(
     [f"Week{i:02d}" for i in range(1, 13)]
 )
 
+# [정화 함수] 학번에서 .0을 떼고 깨끗한 문자열로 만드는 기능
+def clean_id(id_val):
+    if pd.isna(id_val): return ""
+    # 숫자로 들어올 경우 .0을 제거하고, 문자열로 변환 후 공백 제거
+    return str(id_val).replace('.0', '').split('.')[0].strip()
+
 try:
     # 데이터 로드
     roster_df = conn.read(worksheet="Roster", ttl=3600)
@@ -75,12 +81,13 @@ try:
         df = pd.DataFrame(columns=["학번", "이름", "글자수", "내용", "1문장요약", "AI의견", "AI의심도", "제출시간"])
     else:
         # 데이터 클리닝: 학번을 문자열로 통일하고 공백 제거 (명단 대조용)
-        df['학번'] = df['학번'].astype(str).str.strip()
+        df['학번'] = df['학번'].apply(clean_id)
         df = df[df['학번'] != ""]
         
     # Roster 데이터 클리닝
-    roster_df['학번'] = roster_df['학번'].astype(str).str.strip()
-    roster_df = roster_df[roster_df['학번'] != ""]
+   if not roster_df.empty:
+        roster_df['학번'] = roster_df['학번'].apply(clean_id)
+        roster_df = roster_df[roster_df['학번'] != ""]
 
 except Exception as e:
     st.error(f"⚠️ 데이터 로드 중 오류가 발생했습니다. (에러: {e})")
